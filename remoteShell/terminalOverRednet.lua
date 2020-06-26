@@ -1,16 +1,20 @@
-local replyTimeout = 100
+local replyTimeout = 1
 local protocolName = "Lupus590:terminalOverRednet"
-local events = { terminalCall = "terminal_call", terminalResponce = "terminal_responce"}
+local events = { terminalCall = "terminal_call", terminalResponce = "terminal_responce", terminalError = "terminal_error"}
 
 local function newTerminalSender(receiverId)
 
     local function sendCall(method, ...)
-        local callId = string.format("%08x", math.random(1, 2147483647))
+        local callId = 1 -- string.format("%08x", math.random(1, 2147483647)) -- TODO: change back
         rednet.send(receiverId, {type = events.terminalCall, callId = callId, method = method, args = table.pack(...) }, protocolName)
         while true do
-            local senderId, message table.pack(rednet.receive(protocolName, replyTimeout))
-            if senderId == receiverId and type(message) == "table" and message.callId == callId and message.type == events.terminalResponce then
-                return message.returnValues
+            local senderId, message = rednet.receive(protocolName, replyTimeout)
+            if senderId == receiverId and type(message) == "table" and message.callId == callId then
+                if  message.type == events.terminalResponce then
+                    return table.unpack(message.returnValues)
+                elseif message.type == events.terminalError then
+                    error("\nRemote Code:\n  "..table.concat(message.returnValues, "  \n").."\nEnd of Remote Code", 2)
+                end
             end
         end
     end
@@ -25,16 +29,26 @@ local function newTerminalResponder(senderID)
         rednet.send(senderID, {type = events.terminalResponce, callId = callId, returnValues = table.pack(...) }, protocolName)
     end
 
+    local function returnError(callId, ...)
+        rednet.send(senderID, {type = events.terminalError, callId = callId, returnValues = table.pack(...) }, protocolName)
+    end
+
     return {
         returnCall = returnCall,
+        returnError = returnError,
     }
 end
 
 local function translateEvent(...)
     local event = table.pack(...)
-    if event[1] == "rednet" and event[3] == protocolName and type(event[2]) == "table" then
-        return event[2].type, event[2]
-    else 
+    if event[1] == "rednet_message" then
+        local sender, message, protocol = event[2], event[3], event[4]
+        if (protocol and protocol == protocolName or true) and type(message) == "table" then
+            return message.type, message
+        else
+            return table.unpack(event)
+        end
+    else
         return table.unpack(event)
     end
 end

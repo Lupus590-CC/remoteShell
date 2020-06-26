@@ -12,14 +12,10 @@ local args = table.pack(...)
 if args[1] == "client" then
     client.newClient().connectRemoteTerminal(args[2], term.current())
 elseif args[1] == "server" then
-    
-    print("hello world")
     local s = server.newServer(args[2])
-    
-    print("hello world")
     local remoteTerminal = s.connectRemoteTerminal(18)
-    remoteTerminal.write("hello world")
-    --term.redirect(remoteTerminal)
-    print("hello world")
-    --shell.run("starup/00_mbs.lua")
+    
+    local oldTerm = term.redirect(remoteTerminal)
+    shell.run("hello")
+    term.redirect(oldTerm)
 end
