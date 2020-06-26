@@ -80,6 +80,47 @@ local function overWritePullEvent()
     overWrotePullevent = true
 end
 
+local function connectRemoteTerminal(hostName, parentTerminal)        
+    local hostId = rednet.lookup(protocolName, hostName)
+    local terminalResponder = newTerminalResponder(hostId)
+    while true do
+        local event, terminalEventArg, protocol = os.pullEvent()
+        
+        
+        event, terminalEventArg = translateEvent(event, terminalEventArg, protocol)
+        if event == events.terminalCall then
+            local returnValues = table.pack(pcall(parentTerminal[terminalEventArg.method], table.unpack(terminalEventArg.args)))
+            local ok = table.remove(returnValues,1)
+            returnValues.n = returnValues.n -1
+            if ok then
+                terminalResponder.returnCall(terminalEventArg.callId, table.unpack(returnValues))
+            else
+                terminalResponder.returnError(terminalEventArg.callId, table.unpack(returnValues))
+            end
+        end
+    end
+end
+
+local function newServer(hostName)
+    rednet.host(protocolName, hostName)
+    local function connectRemoteTerminal(receiverId)
+        local remoteTerminal = newTerminalSender(receiverId)
+        local fakeTermMeta = {
+            __index = function(_, key)
+                return function(...)
+                    return remoteTerminal.sendCall(key, ...)
+                end
+            end
+        }
+        local fakeTerm = setmetatable({}, fakeTermMeta)
+
+        return fakeTerm
+    end
+    return {
+        connectRemoteTerminal = connectRemoteTerminal,
+    }
+end
+
 return {
     protocolName = protocolName,
     events = events,
@@ -88,4 +129,7 @@ return {
     translateEvent = translateEvent,
     eventTranslatorDeamon = eventTranslatorDeamon,
     overWritePullEvent = overWritePullEvent,
+    connectRemoteTerminal = connectRemoteTerminal,
+    newServer = newServer,
+
 }

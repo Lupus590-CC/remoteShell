@@ -1,5 +1,5 @@
-local server = require("remoteShell.server")
-local client = require("remoteShell.client")
+
+local terminalOverRednet = require("remoteShell.terminalOverRednet")
 
 peripheral.find("modem", function(side)
     rednet.open(side)
@@ -16,9 +16,9 @@ end)
 
 local args = table.pack(...)
 if args[1] == "client" then
-    client.newClient().connectRemoteTerminal(args[2], term.current())
+    terminalOverRednet.connectRemoteTerminal(args[2], term.current())
 elseif args[1] == "server" then
-    local s = server.newServer(args[2])
+    local s = terminalOverRednet.newServer(args[2])
     local remoteTerminal = s.connectRemoteTerminal(18)
     
     local oldTerm = term.redirect(remoteTerminal)
