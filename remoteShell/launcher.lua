@@ -5,7 +5,12 @@ peripheral.find("modem", function(side)
     rednet.open(side)
 end)
 
--- TODO: mbs support
+-- TODO: mbs support?
+
+-- TODO: code cleanup (merge client and server into main API)
+-- TODO: arg checks
+-- TODO: send input back
+
 
 
 local args = table.pack(...)
@@ -16,6 +21,6 @@ elseif args[1] == "server" then
     local remoteTerminal = s.connectRemoteTerminal(18)
     
     local oldTerm = term.redirect(remoteTerminal)
-    shell.run("hello")
+    shell.run("shell")
     term.redirect(oldTerm)
 end
