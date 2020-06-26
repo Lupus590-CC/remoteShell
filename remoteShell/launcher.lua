@@ -10,6 +10,7 @@ end)
 -- TODO: code cleanup (merge client and server into main API)
 -- TODO: arg checks
 -- TODO: send input back
+-- TODO: file transfer
 
 
 
