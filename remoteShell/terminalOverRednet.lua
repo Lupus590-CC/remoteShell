@@ -25,7 +25,7 @@ local inputEvents = { -- TODO: how does the host recive this? how does it handle
 
 local eventTranslatiorIsRunning = false
 
-local function eventTranslatorDeamon()
+local function eventTranslatorDeamon() -- seperate coroutine may be a cause of slowdown
     eventTranslatiorIsRunning = true
     
     while true do
@@ -92,8 +92,9 @@ local function connectToRemoteTerminal(hostId, parentTerminal)
     until recievedId == hostId and message and message.type == protocolEvents.connectionResponce and message.accepted
 
     while true do
-        local event, terminalEventArg = os.pullEvent()
-        if event == protocolEvents.terminalCall then
+        local event = table.pack(os.pullEvent())
+        if event[1] == protocolEvents.terminalCall then
+            local terminalEventArg = event[2]
             local returnValues = table.pack(pcall(parentTerminal[terminalEventArg.method], table.unpack(terminalEventArg.args)))
             local ok = table.remove(returnValues,1)
             returnValues.n = returnValues.n -1
@@ -102,14 +103,16 @@ local function connectToRemoteTerminal(hostId, parentTerminal)
             else
                 terminalResponder.returnError(terminalEventArg.callId, table.unpack(returnValues))
             end
-        elseif event == protocolEvents.disconnection then
-            return
+        elseif event[1] == protocolEvents.disconnection then
+            error("Disconnected by remote host",0)
+        elseif inputEvents[event[1]] then
+            rednet.send(hostId, {type = protocolEvents.inputEvent, event = event}, protocolName)
         end
     end
 end
 
 -- simple net shell like server
-local function remoteTerminalDeamon(startupProgram)
+local function remoteTerminalDeamon()
     if not eventTranslatiorIsRunning then error("event translator is not running") end
     while true do
         local clientId
@@ -119,11 +122,16 @@ local function remoteTerminalDeamon(startupProgram)
         until message and message.type == protocolEvents.connectionRequest  -- TODO: put into translateEvent
 
         rednet.send(clientId, {type = protocolEvents.connectionResponce, accepted = true}, protocolName)
-        sleep(1)
         local remoteTerminal = newRemoteTerminalProxy(clientId)
-        if pcall(remoteTerminal.write, "hello world from remote\n") then
-            rednet.send(clientId, {type = protocolEvents.disconnection}, protocolName)
-        end
+        local oldTerm = term.redirect(remoteTerminal)
+        print("Hello world from remote")
+        print("press any key to exit")
+        repeat
+            local _, event = os.pullEvent(protocolEvents.inputEvent)
+        until event.event[1] == "key"
+
+        rednet.send(clientId, {type = protocolEvents.disconnection}, protocolName)
+        return
     end
 end
 

@@ -24,7 +24,7 @@ local function main()
         local hostId = tonumber(args[2])
         terminalOverRednet.connectToRemoteTerminal(hostId, term.current())
     elseif args[1] == "server" then
-        terminalOverRednet.remoteTerminalDeamon("shell")
+        terminalOverRednet.remoteTerminalDeamon()
     end
 end
 
