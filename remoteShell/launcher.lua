@@ -5,7 +5,7 @@ peripheral.find("modem", function(side)
     rednet.open(side)
 end)
 
--- TODO: mbs support?
+-- TODO: mbs support? choosable startup program
 
 -- TODO: code cleanup (merge client and server into main API)
 -- TODO: arg checks
@@ -18,12 +18,14 @@ end)
 -- TODO: encrypt mode?
 
 
-
 local args = table.pack(...)
-if args[1] == "client" then
-            
-    local hostId = tonumber(args[2])
-    terminalOverRednet.connectToRemoteTerminalHost(hostId, term.current())
-elseif args[1] == "server" then
-    terminalOverRednet.remoteTerminalDeamon("shell")
+local function main()
+    if args[1] == "client" then
+        local hostId = tonumber(args[2])
+        terminalOverRednet.connectToRemoteTerminal(hostId, term.current())
+    elseif args[1] == "server" then
+        terminalOverRednet.remoteTerminalDeamon("shell")
+    end
 end
+
+parallel.waitForAny(terminalOverRednet.eventTranslatorDeamon, main)
