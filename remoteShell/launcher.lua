@@ -16,7 +16,7 @@ end)
 
 local args = table.pack(...)
 if args[1] == "client" then
-    terminalOverRednet.connectRemoteTerminal(args[2], term.current())
+    terminalOverRednet.newClient().connectRemoteTerminal(args[2], term.current())
 elseif args[1] == "server" then
     local s = terminalOverRednet.newServer(args[2])
     local remoteTerminal = s.connectRemoteTerminal(18)

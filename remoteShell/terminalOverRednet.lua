@@ -1,4 +1,4 @@
-local replyTimeout = 1
+local replyTimeout = 100
 local protocolName = "Lupus590:terminalOverRednet"
 local events = { terminalCall = "terminal_call", terminalResponce = "terminal_responce", terminalError = "terminal_error"}
 
@@ -15,6 +15,8 @@ local function newTerminalSender(receiverId)
                 elseif message.type == events.terminalError then
                     error("\nRemote Code:\n  "..table.concat(message.returnValues, "  \n").."\nEnd of Remote Code", 2)
                 end
+            elseif senderId == nil then
+                error("disconnected",0)
             end
         end
     end
@@ -80,25 +82,27 @@ local function overWritePullEvent()
     overWrotePullevent = true
 end
 
-local function connectRemoteTerminal(hostName, parentTerminal)        
-    local hostId = rednet.lookup(protocolName, hostName)
-    local terminalResponder = newTerminalResponder(hostId)
-    while true do
-        local event, terminalEventArg, protocol = os.pullEvent()
-        
-        
-        event, terminalEventArg = translateEvent(event, terminalEventArg, protocol)
-        if event == events.terminalCall then
-            local returnValues = table.pack(pcall(parentTerminal[terminalEventArg.method], table.unpack(terminalEventArg.args)))
-            local ok = table.remove(returnValues,1)
-            returnValues.n = returnValues.n -1
-            if ok then
-                terminalResponder.returnCall(terminalEventArg.callId, table.unpack(returnValues))
-            else
-                terminalResponder.returnError(terminalEventArg.callId, table.unpack(returnValues))
+local function newClient()
+    local function connectRemoteTerminal(hostName, parentTerminal)        
+        local hostId = rednet.lookup(protocolName, hostName)
+        local terminalResponder = newTerminalResponder(hostId)
+        while true do
+            local event, terminalEventArg = translateEvent(os.pullEvent())
+            if event == events.terminalCall then
+                local returnValues = table.pack(pcall(parentTerminal[terminalEventArg.method], table.unpack(terminalEventArg.args)))
+                local ok = table.remove(returnValues,1)
+                returnValues.n = returnValues.n -1
+                if ok then
+                    terminalResponder.returnCall(terminalEventArg.callId, table.unpack(returnValues))
+                else
+                    terminalResponder.returnError(terminalEventArg.callId, table.unpack(returnValues))
+                end
             end
         end
     end
+    return {
+        connectRemoteTerminal = connectRemoteTerminal,
+    }
 end
 
 local function newServer(hostName)
@@ -129,7 +133,7 @@ return {
     translateEvent = translateEvent,
     eventTranslatorDeamon = eventTranslatorDeamon,
     overWritePullEvent = overWritePullEvent,
-    connectRemoteTerminal = connectRemoteTerminal,
+    newClient = newClient,
     newServer = newServer,
 
 }
