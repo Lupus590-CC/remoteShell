@@ -7,16 +7,14 @@ end)
 
 -- TODO: mbs support? choosable startup program
 
--- TODO: code cleanup (merge client and server into main API)
 -- TODO: arg checks
--- TODO: send input back
 -- TODO: file transfer
 -- TODO: folder/drive mounting
 -- TODO: remote peripherals
--- TODO: client catch terminate events and give menut to quite or forward terminate
+-- TODO: client catch terminate events and give menu to quite or forward terminate
 -- TODO: vnc mode
 -- TODO: encrypt mode?
-
+-- TODO: forward connections or prevent connecting through a server
 
 local args = table.pack(...)
 local function main()
