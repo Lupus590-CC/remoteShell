@@ -1,13 +1,28 @@
 local replyTimeout = 100
 local protocolName = "Lupus590:terminalOverRednet"
-local events = {
+local protocolEvents = {
     terminalCall = "terminal_call",
     terminalResponce = "terminal_responce",
     terminalError = "terminal_error",
+    inputEvent = "input_event",
     connectionRequest = "connection_request",
-    connectionResonce = "connection_responce"
+    connectionResponce = "connection_responce",
+    disconnection = "disconnection"
+}
+local inputEvents = { -- TODO: how does the host recive this? how does it handle multiple clients?
+    char = true,
+    key = true,
+    key_up = true,
+    mouse_click = true,
+    mouse_drag = true,
+    mouse_scroll = true,
+    mouse_up = true,
+    paste = true,
+    term_resize = true,
 }
 
+-- converts appropriate rednet events into the protocol events above
+-- returns the converted event or the original event if it wasn't convertable. An unknown rednet event will get forwarded as expected
 local function translateEvent(...)
     local event = table.pack(...)
     if event[1] == "rednet_message" then
@@ -31,111 +46,97 @@ local function eventTranslatorDeamon()
     end
 end
 
-local oldPullEvent = os.pullEvent
-local overWrotePullevent = false
-local function overWritePullEvent()
-    if not overWrotePullevent then
-        os.pullEvent = function(filter)
-            if filter and events[filter] then
-                local event
-                repeat
-                    event = table.pack(translateEvent(oldPullEvent("rednet")))
-                until filter == event[1]
-                return table.unpack(event)
-            end
-            return translateEvent(oldPullEvent(filter))
-        end
+-- provides methods for sending return values and errors to the host's terminal proxy
+local function newTerminalResponder(hostId)
+    local function returnCall(callId, ...)
+        rednet.send(hostId, {type = protocolEvents.terminalResponce, callId = callId, returnValues = table.pack(...) }, protocolName)
     end
-    overWrotePullevent = true
+
+    local function returnError(callId, ...)
+        rednet.send(hostId, {type = protocolEvents.terminalError, callId = callId, returnValues = table.pack(...) }, protocolName)
+    end
+
+    return {
+        returnCall = returnCall,
+        returnError = returnError,
+    }
 end
 
-local function newClient()
-    local function connectRemoteTerminal(hostName, parentTerminal)        
-        local hostId = rednet.lookup(protocolName, hostName)
-        local function newTerminalResponder(senderID)
-            local function returnCall(callId, ...)
-                rednet.send(senderID, {type = events.terminalResponce, callId = callId, returnValues = table.pack(...) }, protocolName)
-            end
-        
-            local function returnError(callId, ...)
-                rednet.send(senderID, {type = events.terminalError, callId = callId, returnValues = table.pack(...) }, protocolName)
-            end
-        
-            return {
-                returnCall = returnCall,
-                returnError = returnError,
-            }
-        end
-        local terminalResponder = newTerminalResponder(hostId)
+-- creates a fake terminal object which forwards calls to the remote screen
+local function newRemoteTerminalProxy(clientId)
+    local function sendCall(method, ...)
+        rednet.send(clientId, {type = protocolEvents.terminalCall, method = method, args = table.pack(...) }, protocolName)
         while true do
-            local event, terminalEventArg = translateEvent(os.pullEvent())
-            if event == events.terminalCall then
-                local returnValues = table.pack(pcall(parentTerminal[terminalEventArg.method], table.unpack(terminalEventArg.args)))
-                local ok = table.remove(returnValues,1)
-                returnValues.n = returnValues.n -1
-                if ok then
-                    terminalResponder.returnCall(terminalEventArg.callId, table.unpack(returnValues))
-                else
-                    terminalResponder.returnError(terminalEventArg.callId, table.unpack(returnValues))
+            local senderId, message = rednet.receive(protocolName, replyTimeout) -- TODO: put into translateEvent
+            if senderId == clientId and type(message) == "table" then
+                if  message.type == protocolEvents.terminalResponce then
+                    return table.unpack(message.returnValues)
+                elseif message.type == protocolEvents.terminalError then
+                    error("\nRemote Code:\n  "..table.concat(message.returnValues, "  \n").."\nEnd of Remote Code", 2)
                 end
+            elseif senderId == nil then
+                error("Timed out awaiting responce",0)
             end
         end
     end
-    return {
-        connectRemoteTerminal = connectRemoteTerminal,
+    local fakeTermMeta = {
+        __index = function(_, key)
+            return function(...)
+                return sendCall(key, ...)
+            end
+        end
     }
+
+    return setmetatable({}, fakeTermMeta)
 end
 
-local function newServer(hostName)
-    rednet.host(protocolName, hostName)
-    local function connectRemoteTerminal(receiverId)
-        local function newTerminalSender(receiverId)
+local function connectToRemoteTerminalHost(hostId, parentTerminal)
+    local terminalResponder = newTerminalResponder(hostId)    
+    rednet.send(hostId, {type = protocolEvents.connectionRequest}, protocolName)
+    repeat
+        local recievedId, message = rednet.receive(protocolName, nil)
+    until recievedId == hostId and message and message.type == protocolEvents.connectionResponce and message.accepted
 
-            local function sendCall(method, ...)
-                local callId = 1 -- string.format("%08x", math.random(1, 2147483647)) -- TODO: change back
-                rednet.send(receiverId, {type = events.terminalCall, callId = callId, method = method, args = table.pack(...) }, protocolName)
-                while true do
-                    local senderId, message = rednet.receive(protocolName, replyTimeout)
-                    if senderId == receiverId and type(message) == "table" and message.callId == callId then
-                        if  message.type == events.terminalResponce then
-                            return table.unpack(message.returnValues)
-                        elseif message.type == events.terminalError then
-                            error("\nRemote Code:\n  "..table.concat(message.returnValues, "  \n").."\nEnd of Remote Code", 2)
-                        end
-                    elseif senderId == nil then
-                        error("Timed out awaiting responce",0)
-                    end
-                end
+    while true do
+        local event, terminalEventArg = translateEvent(os.pullEvent())
+        if event == protocolEvents.terminalCall then
+            local returnValues = table.pack(pcall(parentTerminal[terminalEventArg.method], table.unpack(terminalEventArg.args)))
+            local ok = table.remove(returnValues,1)
+            returnValues.n = returnValues.n -1
+            if ok then
+                terminalResponder.returnCall(terminalEventArg.callId, table.unpack(returnValues))
+            else
+                terminalResponder.returnError(terminalEventArg.callId, table.unpack(returnValues))
             end
-        
-            return {
-                sendCall = sendCall,
-            }
+        elseif event == protocolEvents.disconnection then
+            return
         end
-        local remoteTerminal = newTerminalSender(receiverId)
-        local fakeTermMeta = {
-            __index = function(_, key)
-                return function(...)
-                    return remoteTerminal.sendCall(key, ...)
-                end
-            end
-        }
-        local fakeTerm = setmetatable({}, fakeTermMeta)
-
-        return fakeTerm
     end
-    return {
-        connectRemoteTerminal = connectRemoteTerminal,
-    }
+end
+    
+local function remoteTerminalDeamon(startupProgram)
+    while true do
+        local clientId
+        repeat
+            local message
+            clientId, message = rednet.receive(protocolName, nil)
+        until message and message.type == protocolEvents.connectionRequest
+
+        rednet.send(clientId, {type = protocolEvents.connectionResponce, accepted = true}, protocolName)
+        local remoteTerminal = newRemoteTerminalProxy(clientId)
+        remoteTerminal.write("hello world from remote\n")
+        rednet.send(clientId, {type = protocolEvents.disconnection}, protocolName)
+    end
 end
 
 return {
     protocolName = protocolName,
-    events = events,
+    protocolEvents = protocolEvents,
     translateEvent = translateEvent,
     eventTranslatorDeamon = eventTranslatorDeamon,
-    overWritePullEvent = overWritePullEvent,
-    newClient = newClient,
-    newServer = newServer,
+    newTerminalResponder = newTerminalResponder,
+    connectToRemoteTerminalHost = connectToRemoteTerminalHost,
+    newRemoteTerminalProxy = newRemoteTerminalProxy,
+    remoteTerminalDeamon = remoteTerminalDeamon,
 
 }

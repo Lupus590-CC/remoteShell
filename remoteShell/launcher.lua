@@ -11,17 +11,19 @@ end)
 -- TODO: arg checks
 -- TODO: send input back
 -- TODO: file transfer
+-- TODO: folder/drive mounting
+-- TODO: remote peripherals
+-- TODO: client catch terminate events and give menut to quite or forward terminate
+-- TODO: vnc mode
+-- TODO: encrypt mode?
 
 
 
 local args = table.pack(...)
 if args[1] == "client" then
-    terminalOverRednet.newClient().connectRemoteTerminal(args[2], term.current())
+            
+    local hostId = tonumber(args[2])
+    terminalOverRednet.connectToRemoteTerminalHost(hostId, term.current())
 elseif args[1] == "server" then
-    local s = terminalOverRednet.newServer(args[2])
-    local remoteTerminal = s.connectRemoteTerminal(18)
-    
-    local oldTerm = term.redirect(remoteTerminal)
-    shell.run("shell")
-    term.redirect(oldTerm)
+    terminalOverRednet.remoteTerminalDeamon("shell")
 end
