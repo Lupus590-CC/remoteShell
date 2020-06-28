@@ -21,6 +21,20 @@ local inputEvents = {
     term_resize = true,
 }
 
+inputEvents = {}
+
+local oldError = error
+local function error(...)
+    term.redirect(term.native())
+    oldError(...)
+end
+
+local function debugPrint(...)
+    local oldTerm = term.redirect(term.native())
+    print(...)
+    term.redirect(oldTerm)
+end
+
 local eventTranslatiorIsRunning = false
 
 local function eventTranslatorDeamon() -- seperate coroutine may be a cause of slowdown -- TODO: attempt to obsolete
@@ -37,12 +51,14 @@ end
 -- provides methods for sending return values and errors to the host's terminal proxy
 local function newTerminalResponder(hostId)
     if not eventTranslatiorIsRunning then error("event translator is not running") end
-    local function returnCall(callId, ...)
-        rednet.send(hostId, {type = protocolEvents.terminalResponce, callId = callId, returnValues = table.pack(...) }, protocolName)
+    local function returnCall(returnValues)
+        debugPrint("returning call")
+        rednet.send(hostId, {type = protocolEvents.terminalResponce, returnValues = returnValues }, protocolName)
     end
 
-    local function returnError(callId, ...)
-        rednet.send(hostId, {type = protocolEvents.terminalError, callId = callId, returnValues = table.pack(...) }, protocolName)
+    local function returnError(returnValues)
+        debugPrint("returning error")
+        rednet.send(hostId, {type = protocolEvents.terminalError, returnValues = returnValues }, protocolName)
     end
 
     return {
@@ -56,6 +72,8 @@ local function newRemoteTerminalProxy(clientId)
     if not eventTranslatiorIsRunning then error("event translator is not running") end
     local function sendCall(method, ...)
         rednet.send(clientId, {type = protocolEvents.terminalCall, method = method, args = table.pack(...) }, protocolName)
+        
+        debugPrint("sending call to "..method)
         while true do
 
             local senderId, message = rednet.receive(protocolName, replyTimeout)
@@ -98,9 +116,9 @@ local function connectToRemoteTerminal(hostId, parentTerminal)
             local ok = table.remove(returnValues,1)
             returnValues.n = returnValues.n -1
             if ok then
-                terminalResponder.returnCall(terminalEventArg.callId, table.unpack(returnValues, 1, returnValues.n))
+                terminalResponder.returnCall(returnValues)
             else
-                terminalResponder.returnError(terminalEventArg.callId, table.unpack(returnValues, 1, returnValues.n))
+                terminalResponder.returnError(returnValues)
             end
         elseif event[1] == protocolEvents.disconnection then
             error("Disconnected by remote host",0)
@@ -127,23 +145,28 @@ local function remoteTerminalHostDeamon(startupProgram)
                 else shellToUse = "rom/programs/shell.lua" end
 
                 shellToUse = "rom/programs/shell.lua"
+
+                
+                debugPrint("created client process")
                 
                 --local ok, err = pcall(os.run, {shell = shell}, shellToUse) --, shell.resolve(startupProgram)) -- TODO: restore
-
-                print("hello")
-                os.pullEvent()
-                print("hello2")
+                while true do
+                    print("hello")
+                    debugPrint("hello")
+                    os.pullEvent()
+                end
                 --error()
             end
 
-            if not remotesList[clientId] then
+            if not remotesList[clientId] then                
+                rednet.send(clientId, {type = protocolEvents.connectionResponce, accepted = true}, protocolName)
                 local t = newRemoteTerminalProxy(clientId)
                 local c = coroutine.create(shellRun)
-                term.redirect(t)
+                local oldTerm = term.redirect(t)
                 local _, e = coroutine.resume(c)
                 t = term.current()
+                term.redirect(oldTerm)
                 remotesList[clientId] = {term = t, coroutine = c, eventFilter = e}
-                rednet.send(clientId, {type = protocolEvents.connectionResponce, accepted = true}, protocolName)
             else
                 rednet.send(clientId, {type = protocolEvents.connectionResponce, accepted = false, reason = "Duplicate connection"}, protocolName)
             end
@@ -174,32 +197,33 @@ local function remoteTerminalHostDeamon(startupProgram)
 
         while true do
             local event = table.pack(os.pullEvent())
+            
+            --debugPrint("pulled event"..event[1])
             for clientId, clientData in pairs(remotesList) do
                 -- TODO: test that the event is not relavent to us
-                -- TODO: test for client wanting specific event
                 if coroutine.status(clientData.coroutine) == "dead" then
                     rednet.send(clientId, {type = protocolEvents.disconnection}, protocolName) -- TODO: give clients a reason for the disconnect (hosted program errored, hosted program ended)
                     remotesList[clientId] = nil
                 else
-                    
                     local convertedEvent = event
-                    if clientData.eventFilter then
-                        if protocolEvents[ clientData.eventFilter] and event[1] == "rednet_message" then
-                            local sender, message, protocol = event[2], event[3], event[4]
-                            if protocol == protocolName and sender == clientId then
-                                -- TODO: convert the event when translator deamon is obsolete
-                                --convertedEvent = table.pack(message.type, sender, message)
-                            end
+                    if protocolEvents[ clientData.eventFilter] and event[1] == "rednet_message" then
+                        local sender, message, protocol = event[2], event[3], event[4]
+                        if protocol == protocolName and sender == clientId then
+                            -- TODO: convert the event when translator deamon is obsolete
+                            --convertedEvent = table.pack(message.type, sender, message)
                         end
                     end
 
-                    if clientData.eventFilter == nil or event[1] == clientData.eventFilter then
+                    if clientData.eventFilter == nil or convertedEvent[1] == clientData.eventFilter then
+                        
+                        --debugPrint("forwarding event"..event[1])
                         local eventCopy = deepCopyTable(convertedEvent) -- TODO: skip copy if we translated it
 
-                        term.redirect(clientData.term)
+                        local oldTerm = term.redirect(clientData.term)
                         local _
                         _, remotesList[clientId].eventFilter = coroutine.resume(clientData.coroutine, eventCopy)
                         remotesList[clientId].term = term.current()
+                        term.redirect(oldTerm)
                     end
                     
                 end
