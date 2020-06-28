@@ -76,14 +76,18 @@ local function newRemoteTerminalProxy(clientId)
         debugPrint("sending call to "..method)
         while true do
 
-            local senderId, message = rednet.receive(protocolName, replyTimeout)
-            if senderId == clientId and type(message) == "table" then
+            --local senderId, message = rednet.receive(protocolName, replyTimeout)
+            local event, senderId, message, protocol = os.pullEvent() -- doesn't seem to return, deadlock?
+            
+            debugPrint("waiting for responce, got event "..event.." senderId = "..textutils.serialise(senderId))
+            if event == "rednet_message" and protocol == protocolName and senderId == clientId and type(message) == "table" then
                 if  message.type == protocolEvents.terminalResponce then
+                    debugPrint("got responce to call"..method)
                     return table.unpack(message.returnValues, 1, message.returnValues.n)
                 elseif message.type == protocolEvents.terminalError then
                     error("\nRemote Code:\n  "..table.concat(message.returnValues, "  \n").."\nEnd of Remote Code", 2)
                 end
-            elseif senderId == nil then
+            elseif senderId == nil and false then -- TODO: queue and check timer
                 error("Timed out awaiting responce",0)
             end
         end
@@ -151,8 +155,10 @@ local function remoteTerminalHostDeamon(startupProgram)
                 
                 --local ok, err = pcall(os.run, {shell = shell}, shellToUse) --, shell.resolve(startupProgram)) -- TODO: restore
                 while true do
-                    print("hello")
-                    debugPrint("hello")
+                    --print("hello")
+                    term.write("hello") -- TODO: figure out why the shell host coroutine dies after this call
+                    term.write("hello")
+                    --debugPrint("hello")
                     os.pullEvent()
                 end
                 --error()
@@ -202,6 +208,7 @@ local function remoteTerminalHostDeamon(startupProgram)
             for clientId, clientData in pairs(remotesList) do
                 -- TODO: test that the event is not relavent to us
                 if coroutine.status(clientData.coroutine) == "dead" then
+                    debugPrint("coroutine dead "..textutils.serialise(clientId))
                     rednet.send(clientId, {type = protocolEvents.disconnection}, protocolName) -- TODO: give clients a reason for the disconnect (hosted program errored, hosted program ended)
                     remotesList[clientId] = nil
                 else
