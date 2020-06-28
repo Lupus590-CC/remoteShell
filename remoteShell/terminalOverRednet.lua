@@ -111,7 +111,7 @@ local function connectToRemoteTerminal(hostId, parentTerminal)
 end
 
 -- simple net shell like server
-local function remoteTerminalDeamon()
+local function remoteTerminalDeamon(startupProgram)
     if not eventTranslatiorIsRunning then error("event translator is not running") end
     while true do
         local _, clientId = os.pullEvent(protocolEvents.connectionRequest)
@@ -120,7 +120,7 @@ local function remoteTerminalDeamon()
         local oldTerm = term.redirect(remoteTerminal)
 
         local function shellRun()
-            shell.run("shell")
+            os.run({shell = shell}, "rom/programs/shell.lua", startupProgram)
         end
 
         local function convertEvents()

@@ -15,6 +15,7 @@ end)
 -- TODO: vnc mode
 -- TODO: encrypt mode?
 -- TODO: forward connections or prevent connecting through a server
+-- TODO: send diconnect on server terminate
 
 local args = table.pack(...)
 local function main()
