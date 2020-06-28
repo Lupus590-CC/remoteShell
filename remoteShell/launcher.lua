@@ -5,8 +5,6 @@ peripheral.find("modem", function(side)
     rednet.open(side)
 end)
 
--- TODO: mbs support? choosable startup program
-
 -- TODO: arg checks
 -- TODO: file transfer
 -- TODO: folder/drive mounting
@@ -16,6 +14,7 @@ end)
 -- TODO: encrypt mode?
 -- TODO: forward connections or prevent connecting through a server
 -- TODO: send diconnect on server terminate
+-- TODO: support multiple clients
 
 local args = table.pack(...)
 local function main()
@@ -23,7 +22,7 @@ local function main()
         local hostId = tonumber(args[2])
         terminalOverRednet.connectToRemoteTerminal(hostId, term.current())
     elseif args[1] == "server" then
-        terminalOverRednet.remoteTerminalDeamon()
+        terminalOverRednet.remoteTerminalHostDeamon(args[2])
     end
 end
 
